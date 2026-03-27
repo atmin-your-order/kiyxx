@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Resolver - Bypass DNS Block</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>🔓 Video Resolver</h1>
+            <p>Bypass ISP DNS Block - Scrape & Play Directly</p>
+        </header>
+
+        <!-- Input Section -->
+        <div class="input-section">
+            <div class="input-group">
+                <input 
+                    type="text" 
+                    id="codeInput" 
+                    placeholder="Masukin kode (contoh: 7QeJkP)" 
+                    autocomplete="off"
+                >
+                <button id="resolveBtn" onclick="resolveVideo()">
+                    <span id="btnText">🔍 Resolve</span>
+                    <span id="btnLoader" class="loader hidden"></span>
+                </button>
+            </div>
+            <p class="hint">Contoh link: https://permatamalam.online/7QeJkP → masukin: <code>7QeJkP</code></p>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="state hidden">
+            <div class="spinner"></div>
+            <p>Scraping dari permatamalam...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="errorState" class="state hidden">
+            <div class="error-icon">❌</div>
+            <p id="errorText">Terjadi kesalahan</p>
+            <button onclick="reset()">Coba Lagi</button>
+        </div>
+
+        <!-- Result Section -->
+        <div id="resultSection" class="result-section hidden">
+            
+            <!-- Video Info -->
+            <div class="video-info">
+                <h2 id="videoTitle">Loading...</h2>
+                <div class="meta-tags">
+                    <span class="tag" id="codeTag">Code: -</span>
+                    <span class="tag success" id="statusTag">Resolved</span>
+                </div>
+            </div>
+
+            <!-- Video Player -->
+            <div class="player-container">
+                <div id="iframeWrapper" class="iframe-wrapper">
+                    <iframe 
+                        id="videoFrame" 
+                        src="" 
+                        allowfullscreen 
+                        frameborder="0"
+                        sandbox="allow-same-origin allow-scripts allow-popups"
+                    ></iframe>
+                </div>
+                
+                <!-- Native Video Fallback -->
+                <video 
+                    id="nativePlayer" 
+                    class="native-player hidden" 
+                    controls 
+                    poster=""
+                >
+                    <source id="videoSource" src="" type="video/mp4">
+                    Browser gak support video tag.
+                </video>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="actions">
+                <button class="btn-primary" onclick="copyLink()">
+                    📋 Copy Link
+                </button>
+                <button class="btn-secondary" onclick="openDirect()">
+                    🔗 Open Direct
+                </button>
+                <button class="btn-secondary" onclick="downloadVideo()">
+                    ⬇️ Download
+                </button>
+                <button class="btn-ghost" onclick="reset()">
+                    🔄 Resolve Lain
+                </button>
+            </div>
+
+            <!-- Technical Details -->
+            <div class="tech-details">
+                <h3>🔧 Technical Details</h3>
+                <div class="detail-grid">
+                    <div class="detail-item">
+                        <label>Original URL</label>
+                        <code id="origUrl">-</code>
+                    </div>
+                    <div class="detail-item">
+                        <label>Resolved IP</label>
+                        <code id="resolvedIp">-</code>
+                    </div>
+                    <div class="detail-item">
+                        <label>Direct URL</label>
+                        <code id="directUrl">-</code>
+                    </div>
+                    <div class="detail-item">
+                        <label>Iframe Source</label>
+                        <code id="iframeSrc">-</code>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Banners -->
+            <div id="bannersSection" class="banners-section hidden">
+                <h3>🎯 Banners Detected</h3>
+                <div id="bannersList" class="banners-list"></div>
+            </div>
+        </div>
+
+        <!-- History -->
+        <div class="history-section" id="historySection">
+            <h3>📜 Riwayat</h3>
+            <div id="historyList" class="history-list"></div>
+            <button class="btn-ghost btn-small" onclick="clearHistory()">Clear History</button>
+        </div>
+
+        <!-- Footer -->
+        <footer>
+            <p>Powered by Vercel Edge • Bypass ISP Block</p>
+        </footer>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast hidden"></div>
+
+    <script>
+        // State
+        let currentData = null;
+        let history = JSON.parse(localStorage.getItem('videoHistory') || '[]');
+
+        // Init
+        document.addEventListener('DOMContentLoaded', () => {
+            renderHistory();
+            
+            // Enter key support
+            document.getElementById('codeInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') resolveVideo();
+            });
+        });
+
+        async function resolveVideo() {
+            const code = document.getElementById('codeInput').value.trim();
+            
+            if (!code) {
+                showToast('Masukin kode dulu!', 'error');
+                return;
+            }
+
+            // UI State: Loading
+            setLoading(true);
+            hideAllStates();
+
+            try {
+                const apiUrl = window.location.origin + '/api/resolve?code=' + encodeURIComponent(code);
+                
+                const res = await fetch(apiUrl);
+                const data = await res.json();
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Gagal resolve');
+                }
+
+                currentData = data;
+                
+                // Simpan ke history
+                addToHistory(data);
+                
+                // Tampilin hasil
+                showResult(data);
+                showToast('Video berhasil diresolve! ✅', 'success');
+
+            } catch (err) {
+                console.error(err);
+                showError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function showResult(data) {
+            document.getElementById('resultSection').classList.remove('hidden');
+            
+            // Info
+            document.getElementById('videoTitle').textContent = data.title || 'Video';
+            document.getElementById('codeTag').textContent = `Code: ${data.code}`;
+            
+            // Player
+            const iframe = document.getElementById('videoFrame');
+            const nativePlayer = document.getElementById('nativePlayer');
+            const videoSource = document.getElementById('videoSource');
+            
+            if (data.videoUrl && data.videoUrl.match(/\.(mp4|webm|ogg)($|\?)/i)) {
+                // Langsung MP4, pake native player
+                document.getElementById('iframeWrapper').classList.add('hidden');
+                nativePlayer.classList.remove('hidden');
+                videoSource.src = data.videoUrl;
+                nativePlayer.load();
+                
+                if (data.thumbnail) {
+                    nativePlayer.poster = data.thumbnail;
+                }
+            } else if (data.iframeUrl) {
+                // Iframe embed
+                nativePlayer.classList.add('hidden');
+                document.getElementById('iframeWrapper').classList.remove('hidden');
+                iframe.src = data.iframeUrl;
+            }
+
+            // Technical details
+            document.getElementById('origUrl').textContent = data.videoUrl || '-';
+            document.getElementById('resolvedIp').textContent = data.resolvedIp || 'N/A';
+            document.getElementById('directUrl').textContent = data.directUrl || 'N/A';
+            document.getElementById('iframeSrc').textContent = data.iframeUrl || 'N/A';
+
+            // Banners
+            if (data.banners && data.banners.length > 0) {
+                const bannersSection = document.getElementById('bannersSection');
+                const bannersList = document.getElementById('bannersList');
+                
+                bannersSection.classList.remove('hidden');
+                bannersList.innerHTML = data.banners.map((banner, i) => `
+                    <div class="banner-item" onclick="window.open('${banner.link}', '_blank')">
+                        <img src="${banner.image}" alt="Banner ${i+1}" loading="lazy">
+                        <span class="banner-link">${banner.link}</span>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function copyLink() {
+            if (!currentData) return;
+            
+            const link = currentData.directUrl || currentData.videoUrl;
+            navigator.clipboard.writeText(link).then(() => {
+                showToast('Link dicopy! 📋', 'success');
+            });
+        }
+
+        function openDirect() {
+            if (!currentData) return;
+            const url = currentData.directUrl || currentData.videoUrl;
+            if (url) window.open(url, '_blank');
+        }
+
+        function downloadVideo() {
+            if (!currentData || !currentData.videoUrl) {
+                showToast('URL video gak ada!', 'error');
+                return;
+            }
+            
+            const a = document.createElement('a');
+            a.href = currentData.videoUrl;
+            a.download = `${currentData.code || 'video'}.mp4`;
+            a.target = '_blank';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            showToast('Download dimulai... ⬇️', 'success');
+        }
+
+        // History functions
+        function addToHistory(data) {
+            const item = {
+                code: data.code,
+                title: data.title,
+                videoUrl: data.videoUrl,
+                timestamp: new Date().toISOString()
+            };
+            
+            // Hindari duplikat di top
+            history = history.filter(h => h.code !== data.code);
+            history.unshift(item);
+            
+            // Max 10 items
+            if (history.length > 10) history = history.slice(0, 10);
+            
+            localStorage.setItem('videoHistory', JSON.stringify(history));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            const list = document.getElementById('historyList');
+            
+            if (history.length === 0) {
+                list.innerHTML = '<p class="empty">Belum ada riwayat</p>';
+                return;
+            }
+            
+            list.innerHTML = history.map(item => `
+                <div class="history-item" onclick="loadFromHistory('${item.code}')">
+                    <div class="history-info">
+                        <strong>${item.title || item.code}</strong>
+                        <small>${new Date(item.timestamp).toLocaleString('id-ID')}</small>
+                    </div>
+                    <button class="btn-ghost btn-small" onclick="event.stopPropagation(); loadFromHistory('${item.code}')">
+                        🔄
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function loadFromHistory(code) {
+            document.getElementById('codeInput').value = code;
+            resolveVideo();
+        }
+
+        function clearHistory() {
+            history = [];
+            localStorage.removeItem('videoHistory');
+            renderHistory();
+            showToast('History dihapus!', 'success');
+        }
+
+        // UI Helpers
+        function setLoading(loading) {
+            const btn = document.getElementById('resolveBtn');
+            const btnText = document.getElementById('btnText');
+            const loader = document.getElementById('btnLoader');
+            
+            btn.disabled = loading;
+            
+            if (loading) {
+                btnText.classList.add('hidden');
+                loader.classList.remove('hidden');
+                document.getElementById('loadingState').classList.remove('hidden');
+            } else {
+                btnText.classList.remove('hidden');
+                loader.classList.add('hidden');
+                document.getElementById('loadingState').classList.add('hidden');
+            }
+        }
+
+        function hideAllStates() {
+            document.getElementById('resultSection').classList.add('hidden');
+            document.getElementById('errorState').classList.add('hidden');
+            document.getElementById('loadingState').classList.add('hidden');
+        }
+
+        function showError(msg) {
+            document.getElementById('errorState').classList.remove('hidden');
+            document.getElementById('errorText').textContent = msg;
+        }
+
+        function reset() {
+            document.getElementById('codeInput').value = '';
+            hideAllStates();
+            document.getElementById('codeInput').focus();
+        }
+
+        function showToast(message, type = 'info') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type}`;
+            toast.classList.remove('hidden');
+            
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
