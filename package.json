@@ -1,0 +1,9 @@
+{
+  "name": "video-resolver",
+  "version": "1.0.0",
+  "description": "Bypass ISP DNS Block - Video Scraper",
+  "scripts": {
+    "dev": "vercel dev"
+  },
+  "dependencies": {}
+}
